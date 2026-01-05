@@ -39,7 +39,7 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None,
   """Prepare one shard of the model for the encoder.
 
   Args:
-    inputs: a Tensor.
+    inputs: a Tensor [batch_size, length, emb_dim].
     target_space: a Tensor.
     hparams: run hyperparameters
     features: optionally pass the entire features dictionary as well.
@@ -59,12 +59,19 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None,
   ishape_static = inputs.shape.as_list()
   encoder_input = inputs
   if features and "inputs_segmentation" in features:
+    '''
+    packed dataset, 打包数据集，由于序列中存在很多短序列，短序列需要padding，浪费计算资源，将多个短序列合并成一个长序列，通过inputs_segmentation标识不同短序列，用inputs_position标识不同短序列中的位置。targets_segmentation和targets_position同理。
+    '''
     # Packed dataset.  Keep the examples from seeing each other.
     inputs_segmentation = features["inputs_segmentation"]
     inputs_position = features["inputs_position"]
     targets_segmentation = features["targets_segmentation"]
     if (hasattr(hparams, "unidirectional_encoder") and
         hparams.unidirectional_encoder):
+      '''
+        单向encoder，只能看到之前的位置（包括自己），使用下三角掩码（因果掩码）
+        encoder_self_attention_bias是一个(1, 1, length, length)的tensor，其中length是输入序列的长度
+      '''
       tf.logging.info("Using unidirectional encoder")
       encoder_self_attention_bias = (
           common_attention.attention_bias_lower_triangle(
@@ -77,7 +84,9 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None,
         common_attention.attention_bias_same_segment(targets_segmentation,
                                                      inputs_segmentation))
   else:
-    encoder_padding = common_attention.embedding_to_padding(encoder_input)
+    # (batch_size, length) 如果embed全为0则为true
+    encoder_padding = common_attention.embedding_to_padding(encoder_input) 
+    # (batch_size, 1, 1, length) 
     ignore_padding = common_attention.attention_bias_ignore_padding(
         encoder_padding)
     if (hasattr(hparams, "unidirectional_encoder") and
@@ -92,11 +101,13 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None,
     encoder_decoder_attention_bias = ignore_padding
     inputs_position = None
   if hparams.proximity_bias:
+    # 位置偏置，在自注意力机制中引入的归纳偏置，让模型更关注输入中相邻或较近的位置，而不是平等的关注所有为位置，在图像、自然语言等任务中有朴素的理解。
     encoder_self_attention_bias += common_attention.attention_bias_proximal(
         common_layers.shape_list(inputs)[1])
   if target_space is not None and hparams.get("use_target_space_embedding",
                                               True):
     # Append target_space_id embedding to inputs.
+    # target space id用来将目标空间的编码嵌入输入编码中，常在翻译中编码目标语言。
     emb_target_space = common_layers.embedding(
         target_space,
         32,
@@ -106,6 +117,10 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None,
         reuse=reuse_target_embedding)
     emb_target_space = tf.reshape(emb_target_space, [1, 1, -1])
     encoder_input += emb_target_space
+
+  '''
+      位置编码
+  '''
   if hparams.pos == "timing":
     if inputs_position is not None:
       encoder_input = common_attention.add_timing_signal_1d_given_position(
@@ -121,6 +136,9 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None,
         inputs_position)
 
   # Add type embeddings
+  '''
+    输入类型编码
+  '''
   if type_ids is not None:
     if not num_types:
       raise ValueError("Need to set num_types as well.")
@@ -148,7 +166,7 @@ def transformer_encoder(encoder_input,
 
   Args:
     encoder_input: a Tensor
-    encoder_self_attention_bias: bias Tensor for self-attention
+
        (see common_attention.attention_bias())
     hparams: hyperparameters for model
     name: a string
@@ -214,7 +232,7 @@ def transformer_encoder(encoder_input,
               common_layers.layer_preprocess(x, hparams),
               None,
               encoder_self_attention_bias,
-              hparams.attention_key_channels or hparams.hidden_size,
+              hparams.attention_key_channels or hparams.hidden_size, # Q/K的维度，默认同d_model
               hparams.attention_value_channels or hparams.hidden_size,
               hparams.hidden_size,
               hparams.num_heads,

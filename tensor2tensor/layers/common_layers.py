@@ -402,7 +402,9 @@ def embedding(x,
               symbol_dropout_rate=0.0,
               embedding_var=None,
               dtype=tf.float32):
-  """Embed x of type int64 into dense vectors, reducing to max 4 dimensions."""
+  """Embed x of type int64 into dense vectors, reducing to max 4 dimensions.
+    
+  """
   with tf.variable_scope(
       name, default_name="embedding", values=[x], reuse=reuse, dtype=dtype):
     if embedding_var is None:
@@ -2813,7 +2815,10 @@ def conv_hidden_relu_memory_efficient(x,
 
 
 def shape_list(x):
-  """Return list of dims, statically where possible."""
+  """Return list of dims, statically where possible.
+    tf.shape输出类型tensor，在图执行的时候实际tensor的形状
+    tensor.shape/tensor.get_shape,静态图中tensor的形状，返回类型tensorShape
+  """
   x = tf.convert_to_tensor(x)
 
   # If unknown rank, return dynamic shape
@@ -3409,6 +3414,7 @@ def cast_like(x, y):
     return x
 
   cast_x = tf.cast(x, y.dtype)
+  # 类型转换可能促发设备变化，也就是转换类型在原设备上不支持，发生了设备间的复制，这可能成为性能瓶颈
   if cast_x.device != x.device:
     x_name = "(eager Tensor)"
     try:

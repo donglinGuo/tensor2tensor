@@ -64,7 +64,7 @@ def transformer_encode(encoder_function, inputs, target_space, hparams,
     encoder_function: the encoder function
     inputs: Transformer inputs [batch_size, input_length, 1, hidden_dim] which
       will be flattened along the two spatial dimensions.
-    target_space: scalar, target space ID.
+    target_space: scalar, target space ID. 用于标识输出空间的，例如多语言翻译中，不同目标语言对应不同输出空间，通过这个标识将其编码。
     hparams: hyperparameters for model.
     attention_weights: weight to store attention to.
     features: optionally pass the entire features dictionary as well. This is
@@ -92,7 +92,7 @@ def transformer_encode(encoder_function, inputs, target_space, hparams,
       key=mlperf_log.MODEL_HP_LAYER_POSTPROCESS_DROPOUT,
       value=hparams.layer_prepostprocess_dropout,
       hparams=hparams)
-
+  # 对encoder和decoder stack的输入使用dropout，输入embedding是整个模型的信息源，对输入增加dropout相当于对输入特征做了噪声扰动，增强模型鲁棒性，防止模型记住某些token/位置的固定模式
   encoder_input = tf.nn.dropout(encoder_input,
                                 1.0 - hparams.layer_prepostprocess_dropout)
 

@@ -743,7 +743,7 @@ def add_positional_embedding(x, max_length, name=None, positions=None):
 
   Args:
     x: Tensor with shape [batch, length, depth].
-    max_length: int representing static maximum size of any dimension.
+    max_length: int representing static maximum size of any dimension. 表示候选取值的个数
     name: str representing name of the embedding tf.Variable.
     positions: Tensor with shape [batch, length].
 
@@ -752,6 +752,7 @@ def add_positional_embedding(x, max_length, name=None, positions=None):
   """
   with tf.name_scope("add_positional_embedding"):
     _, length, depth = common_layers.shape_list(x)
+    # 创建所有候选的embedding 
     var = tf.cast(tf.get_variable(name, [max_length, depth]), x.dtype)
     if positions is None:
       pad_length = tf.maximum(0, length - max_length)
@@ -956,9 +957,9 @@ def attention_bias_local(length, max_backward, max_forward):
   Args:
     length: int
     max_backward: int, maximum distance backward to attend. Negative values
-      indicate unlimited.
+      indicate unlimited.向后关注多少个位置
     max_forward: int, maximum distance forward to attend. Negative values
-      indicate unlimited.
+      indicate unlimited.向前关注多少个位置
 
   Returns:
     a `Tensor` with shape [1, 1, length, length].
@@ -1078,6 +1079,7 @@ def attention_bias_prepend_inputs_full_attention(padding):
 @expert_utils.add_name_scope()
 def attention_bias_proximal(length):
   """Bias for self-attention to encourage attention to close positions.
+     位置偏置，位置越近关注越多，bias矩阵中位置越近值越接近0，越远越小于0
 
   Args:
     length: an integer scalar.
