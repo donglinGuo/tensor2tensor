@@ -4522,8 +4522,8 @@ def multihead_attention(query_antecedent,
   """Multihead scaled-dot-product attention with input/output transformations.
 
   Args:
-    query_antecedent: a Tensor with shape [batch, length_q, channels]
-    memory_antecedent: a Tensor with shape [batch, length_m, channels] or None
+    query_antecedent: a Tensor with shape [batch, length_q, channels], query的来源，在self-attention中由于q、k、v来源都是输入，例如encoder所有attention以及decoder的self-attention。
+    memory_antecedent: a Tensor with shape [batch, length_m, channels] or None， memory的来源，也就是K、V的来源，在self-attention中和Q一样来自input，但在cross-attention中来自encoder的输出。
     bias: bias Tensor (see attention_bias())
     total_key_depth: an integer
     total_value_depth: an integer

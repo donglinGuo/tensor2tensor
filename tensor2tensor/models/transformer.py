@@ -59,7 +59,7 @@ def transformer_encode(encoder_function, inputs, target_space, hparams,
                        attention_weights=None, features=None, losses=None,
                        prepare_encoder_fn=None, **kwargs):
   """Encode transformer inputs.
-
+  将调用逻辑暴露外部，提供给其他模型使用。
   Args:
     encoder_function: the encoder function
     inputs: Transformer inputs [batch_size, input_length, 1, hidden_dim] which
@@ -80,6 +80,7 @@ def transformer_encode(encoder_function, inputs, target_space, hparams,
         encoder_decoder_attention_bias: Bias and mask weights for
             encoder-decoder attention. [batch_size, input_length]
   """
+  # 将输入的[batch_size, input_length, 1, hidden_dim]展平为[batch_size * input_length, hidden_dim]
   inputs = common_layers.flatten4d3d(inputs)
 
   if not prepare_encoder_fn:
@@ -95,7 +96,7 @@ def transformer_encode(encoder_function, inputs, target_space, hparams,
   # 对encoder和decoder stack的输入使用dropout，输入embedding是整个模型的信息源，对输入增加dropout相当于对输入特征做了噪声扰动，增强模型鲁棒性，防止模型记住某些token/位置的固定模式
   encoder_input = tf.nn.dropout(encoder_input,
                                 1.0 - hparams.layer_prepostprocess_dropout)
-
+  # 标识输入中哪些位置是padding的tensor
   attn_bias_for_padding = None
   # Otherwise the encoder will just use encoder_self_attention_bias.
   if hparams.unidirectional_encoder:
@@ -229,11 +230,10 @@ class Transformer(t2t_model.T2TModel):
     Args:
       features: Map of features to the model. Should contain the following:
           "inputs": Transformer inputs. [batch_size, input_length, 1,
-            hidden_dim].
+            hidden_dim]. 为了统一文本序列和图像等不同类型输入/进行Area或local attention，扩展了channels/width维度
           "targets": Target decoder outputs. [batch_size, decoder_length, 1,
             hidden_dim]
-          "target_space_id": A scalar int from data_generators.problem.SpaceID.
-
+          "target_space_id": A scalar int from data_generators.problem.SpaceID.target_space_id 是 Tensor2Tensor 用来区分“当前 decoder 正在生成哪一种输出空间”的任务标识符，在单任务中几乎恒为 0，但在多任务 / 多 vocab / 条件生成中是核心条件信号。
     Returns:
       Final decoder representation. [batch_size, decoder_length, hidden_dim]
     """

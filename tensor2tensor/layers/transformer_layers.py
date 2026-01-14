@@ -55,23 +55,28 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None,
     encoder_self_attention_bias: a bias tensor for use in encoder self-attention
     encoder_decoder_attention_bias: a bias tensor for use in encoder-decoder
       attention
+  packed dataset: 
+    打包数据集，由于序列中存在很多短序列，短序列需要padding，浪费计算资源，将多 个短序列合并成一个长序列，通过inputs_segmentation标识不同短序列，用inputs_position标识不同短序列中的位置。targets_segmentation和targets_position同理。
+  unidirectional_encoder:
+    控制encoder的attention是单向的还是双向的，这会决定mask是使用padding mask还是causal mask (因果掩码)
+  encoder_self_attention_bias:
+    一个bias tensor，用在和self-attention中logits相加，控制模型关注的范围和程度，通过bias tensor的方式可以使用统一的形式实现不同形式的mask和偏置
+  encoder_decoder_attention_bias:
+    用来在decoder中做padding mask，避免decoder关注到encoder的padding位置,但它不会进行causal mask。
+  proximity_bias :
+    elative position bias, 相对位置偏置，在自注意力机制中引入的归纳偏置，让模型更关注输入中相邻或较近的位置，而不是平等的关注所有为位置，在图像、自然语言等任务中有朴素的理解。
+  target space:
+    用来将目标空间的编码嵌入输入编码中，常在翻译中编码目标语言。
   """
   ishape_static = inputs.shape.as_list()
   encoder_input = inputs
   if features and "inputs_segmentation" in features:
-    '''
-    packed dataset, 打包数据集，由于序列中存在很多短序列，短序列需要padding，浪费计算资源，将多个短序列合并成一个长序列，通过inputs_segmentation标识不同短序列，用inputs_position标识不同短序列中的位置。targets_segmentation和targets_position同理。
-    '''
     # Packed dataset.  Keep the examples from seeing each other.
     inputs_segmentation = features["inputs_segmentation"]
     inputs_position = features["inputs_position"]
     targets_segmentation = features["targets_segmentation"]
     if (hasattr(hparams, "unidirectional_encoder") and
         hparams.unidirectional_encoder):
-      '''
-        单向encoder，只能看到之前的位置（包括自己），使用下三角掩码（因果掩码）
-        encoder_self_attention_bias是一个(1, 1, length, length)的tensor，其中length是输入序列的长度
-      '''
       tf.logging.info("Using unidirectional encoder")
       encoder_self_attention_bias = (
           common_attention.attention_bias_lower_triangle(
@@ -101,13 +106,11 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None,
     encoder_decoder_attention_bias = ignore_padding
     inputs_position = None
   if hparams.proximity_bias:
-    # 位置偏置，在自注意力机制中引入的归纳偏置，让模型更关注输入中相邻或较近的位置，而不是平等的关注所有为位置，在图像、自然语言等任务中有朴素的理解。
     encoder_self_attention_bias += common_attention.attention_bias_proximal(
         common_layers.shape_list(inputs)[1])
   if target_space is not None and hparams.get("use_target_space_embedding",
                                               True):
     # Append target_space_id embedding to inputs.
-    # target space id用来将目标空间的编码嵌入输入编码中，常在翻译中编码目标语言。
     emb_target_space = common_layers.embedding(
         target_space,
         32,
@@ -136,9 +139,6 @@ def transformer_prepare_encoder(inputs, target_space, hparams, features=None,
         inputs_position)
 
   # Add type embeddings
-  '''
-    输入类型编码
-  '''
   if type_ids is not None:
     if not num_types:
       raise ValueError("Need to set num_types as well.")
@@ -176,6 +176,7 @@ def transformer_encoder(encoder_input,
       encoder_self_attention_bias.  The knowledge about padding is used
       for pad_remover(efficiency) and to mask out padding in convolutional
       layers.
+      用来标识输入数据中非padding mask的位置的tensor，用于后续计算的优化，当输入是packed数据时需要手动输入，如果是packed则可以从encoder_self_attention_bias推断, 需要注意如果encoder是单向attention时就需要用encoder_decoder_attention_bias推断
     save_weights_to: an optional dictionary to capture attention weights
       for visualization; the weights tensor will be appended there under
       a string key created from the variable scope (including name).
@@ -186,6 +187,9 @@ def transformer_encoder(encoder_input,
 
   Returns:
     y: a Tensors
+  
+  attention_dropout_broadcast_dims:
+    在attention中对weight tensor使用dropout，为了避免引入过多随机噪声，在dropout时保持在某个维度上一致。
   """
   x = encoder_input
   attention_dropout_broadcast_dims = (
@@ -220,6 +224,7 @@ def transformer_encoder(encoder_input,
     for layer in range(hparams.num_encoder_layers or hparams.num_hidden_layers):
       with tf.variable_scope("layer_%d" % layer):
         with tf.variable_scope("self_attention"):
+          # 配置是使用area attention还是token attention
           if layer < hparams.get("num_area_layers", 0):
             max_area_width = hparams.get("max_area_width", 1)
             max_area_height = hparams.get("max_area_height", 1)
